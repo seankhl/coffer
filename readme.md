@@ -5,7 +5,7 @@
 
 Right now if you just run the code as normal for go programs:
 
-    go run 1password.go
+    go run coffer.go
 
 it will just decrypt a 1Password.opvault/default folder at the given path. For
 now, you'll have to edit the path yourself since this code is still in a
