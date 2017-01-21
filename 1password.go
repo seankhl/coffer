@@ -187,16 +187,26 @@ func main() {
 		fmt.Println("")
 		
 		// D
-		itemRaw, _ := base64.StdEncoding.DecodeString(v.D)
-		itemOpdata := parseOpdata(itemRaw)
-		itemPtxt := decrypt(
-			bandKey, itemRaw,
-			itemOpdata.ivec, itemOpdata.ctxt, itemOpdata.hmac)
-		itemPtxt = itemPtxt[itemOpdata.padding:]
-		fmt.Printf("itemPtxt: %s\n", string(itemPtxt))
+		dRaw, _ := base64.StdEncoding.DecodeString(v.D)
+		dOpdata := parseOpdata(dRaw)
+		dPtxt := decrypt(
+			bandKey, dRaw,
+			dOpdata.ivec, dOpdata.ctxt, dOpdata.hmac)
+		dPtxt = dPtxt[dOpdata.padding:]
+		fmt.Printf("dPtxt: %s\n", string(dPtxt))
+		
+		// O
+		oRaw, _ := base64.StdEncoding.DecodeString(v.O)
+		oOpdata := parseOpdata(oRaw)
+		oPtxt := decrypt(
+			overviewKey[:], oRaw,
+			oOpdata.ivec, oOpdata.ctxt, oOpdata.hmac)
+		oPtxt = oPtxt[oOpdata.padding:]
+		fmt.Printf("oPtxt: %s\n", string(oPtxt))
+		
 		fmt.Println("")
 	}
-
+	
 	fmt.Println("DONE")
 }
 
