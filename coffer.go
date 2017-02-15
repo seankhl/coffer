@@ -1,7 +1,6 @@
 package main
 
 import (
-	"golang.org/x/crypto/pbkdf2"
 	"crypto/sha512"
 	"crypto/aes"
 	"crypto/hmac"
@@ -10,14 +9,17 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
-	"bufio"
 	"fmt"
 	"os"
-//	"io"
+	"io"
 	"io/ioutil"
 	"strconv"
 	"strings"
 	"unicode/utf8"
+	"syscall"
+	
+	"golang.org/x/crypto/pbkdf2"
+	"golang.org/x/crypto/ssh/terminal"
 //	"log"
 //	"bytes"
 )
@@ -41,25 +43,24 @@ func parseProfile(path string) OPWProfile {
 		fmt.Print(err)
 	}
 	profileE := []byte(profileRaw[12:len(profileRaw)-1])
-	//fmt.Printf("profile.js: %s\n", profileRaw)
-	//fmt.Println()
+	fmt.Fprintf(g_ll, "profile.js: %s\n", profileRaw)
+	fmt.Fprintf(g_ll, "\n")
 
 	// unmarshal profile.js
 	var p OPWProfile
 	json.Unmarshal(profileE, &p)
-	fmt.Printf("p: %+v\n", p)
-	fmt.Println()
+	fmt.Fprintf(g_ll, "p: %+v\n", p)
+	fmt.Fprintf(g_ll, "\n")
 	return p
 }
 
 func getMasterPass() string {
-	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter master password: ")
-	masterPass, _ := reader.ReadString('\n')
-	masterPass = strings.TrimSuffix(masterPass, "\n")
-	fmt.Printf("masterPass is utf-8? %t\n", utf8.ValidString(masterPass))
-	fmt.Printf("masterPass: %s\n", masterPass)
-	fmt.Println()
+	masterPassBytes, _ := terminal.ReadPassword(int(syscall.Stdin))
+	masterPass := strings.TrimSuffix(string(masterPassBytes), "\n")
+	fmt.Fprintf(g_ll, "masterPass is utf-8? %t\n", utf8.ValidString(masterPass))
+	fmt.Fprintf(g_ll, "masterPass: %s\n", masterPass)
+	fmt.Fprintf(g_ll, "\n")
 	return masterPass
 }
 
@@ -108,8 +109,8 @@ func parseBand(path string, band int) OPWBand {
 		fmt.Print(err)
 	}
 	bandE := []byte(bandRaw[3:len(bandRaw)-2])
-	fmt.Printf(bandName + ": %s\n", bandRaw)
-	fmt.Println()
+	fmt.Fprintf(g_ll, bandName + ": %s\n", bandRaw)
+	fmt.Fprintf(g_ll, "\n")
 
 	var bandData OPWBand
 	json.Unmarshal(bandE, &bandData)
@@ -122,7 +123,7 @@ func decrypt(key []byte, raw []byte, ivec []byte, ctxt []byte, vmac []byte) []by
 	h.Write(raw[:len(raw)-len(vmac)])
 	mac := h.Sum(nil)
 	if !hmac.Equal(mac, vmac) {
-		fmt.Printf("bad hmac: %d\n", mac)
+		fmt.Fprintf(g_ll, "bad hmac: %d\n", mac)
 	}
 	// decrypt
 	ptxt := make([]byte, len(ctxt))
@@ -132,7 +133,24 @@ func decrypt(key []byte, raw []byte, ivec []byte, ctxt []byte, vmac []byte) []by
 	return ptxt
 }
 
+// global variable that determines where print debugging goes
+var g_ll io.Writer
+
 func main() {
+	var logMode = "discard"
+	switch logMode {
+		case "file":
+			var err error
+			g_ll, err = os.Create("./coffer.log")
+			if nil != err {
+				panic(err.Error())
+			}
+		case "screen":
+			g_ll = os.Stdout
+		default:
+			g_ll = ioutil.Discard
+	}
+
 	path := "/mnt/c/Users/sean/Dropbox/1Password.opvault/default/"
 
 	// get profile
@@ -144,8 +162,8 @@ func main() {
 	// obtain encryption key and MAC key
 	salt, _ := base64.StdEncoding.DecodeString(p.Salt)
 	derivedKey := pbkdf2.Key([]byte(masterPass), salt, p.Iterations, 64, sha512.New)
-	fmt.Printf("derivedKey: %d\n", derivedKey)
-	fmt.Println()
+	fmt.Fprintf(g_ll, "derivedKey: %d\n", derivedKey)
+	fmt.Fprintf(g_ll, "")
 
 	// parse masterKey
 	masterRaw, _ := base64.StdEncoding.DecodeString(p.MasterKey)
@@ -161,7 +179,7 @@ func main() {
 		masterOpdata.ivec, masterOpdata.ctxt, masterOpdata.hmac)
 	masterPtxt = masterPtxt[masterOpdata.padding:]
 	masterKey := sha512.Sum512(masterPtxt)
-	fmt.Printf("masterKey: %d\n", masterKey)
+	fmt.Fprintf(g_ll, "masterKey: %d\n", masterKey)
 
 	// decrypt overviewKey
 	overviewPtxt := decrypt(
@@ -169,22 +187,22 @@ func main() {
 		overviewOpdata.ivec, overviewOpdata.ctxt, overviewOpdata.hmac)
 	overviewPtxt = overviewPtxt[overviewOpdata.padding:]
 	overviewKey := sha512.Sum512(overviewPtxt)
-	fmt.Printf("overviewKey: %d\n", overviewKey)
+	fmt.Fprintf(g_ll, "overviewKey: %d\n", overviewKey)
 
 	// band parsing
 	bandData := parseBand(path, 0)
-	for _, v := range bandData {
-		//fmt.Printf("%s: %+v\n", k, v)
+	for k, v := range bandData {
+		fmt.Fprintf(g_ll, "%s: %+v\n", k, v)
 
 		// K
 		bandRaw, _ := base64.StdEncoding.DecodeString(v.K)
-		fmt.Printf("bandRaw: %d\n", bandRaw)
+		fmt.Fprintf(g_ll, "bandRaw: %d\n", bandRaw)
 		bandPtxt := decrypt(
 			masterKey[:], bandRaw,
 			bandRaw[:16], bandRaw[16:len(bandRaw)-32], bandRaw[len(bandRaw)-32:])
 		bandKey := bandPtxt[:]
-		fmt.Printf("bandPtxt: %d (%d bytes)\n", bandPtxt, len(bandPtxt))
-		fmt.Println("")
+		fmt.Fprintf(g_ll, "bandPtxt: %d (%d bytes)\n", bandPtxt, len(bandPtxt))
+		fmt.Fprintf(g_ll, "\n")
 		
 		// D
 		dRaw, _ := base64.StdEncoding.DecodeString(v.D)
@@ -193,7 +211,9 @@ func main() {
 			bandKey, dRaw,
 			dOpdata.ivec, dOpdata.ctxt, dOpdata.hmac)
 		dPtxt = dPtxt[dOpdata.padding:]
-		fmt.Printf("dPtxt: %s\n", string(dPtxt))
+		fmt.Fprintf(g_ll, "dPtxt: %s\n", string(dPtxt))
+		var dJson map[string][]map[string]string
+		json.Unmarshal(dPtxt, &dJson)
 		
 		// O
 		oRaw, _ := base64.StdEncoding.DecodeString(v.O)
@@ -202,103 +222,16 @@ func main() {
 			overviewKey[:], oRaw,
 			oOpdata.ivec, oOpdata.ctxt, oOpdata.hmac)
 		oPtxt = oPtxt[oOpdata.padding:]
-		fmt.Printf("oPtxt: %s\n", string(oPtxt))
+		fmt.Fprintf(g_ll, "oPtxt: %s\n", string(oPtxt))
+		var oJson map[string]string
+		json.Unmarshal(oPtxt, &oJson)
+
+		fmt.Printf(oJson["title"] + " | ")
+		fmt.Printf(dJson["fields"][0]["name"] + ": " + dJson["fields"][0]["value"] + " | ")
+		fmt.Printf(dJson["fields"][1]["name"] + ": " + dJson["fields"][1]["value"] + "\n")
 		
-		fmt.Println("")
+		fmt.Fprintf(g_ll, "\n")
 	}
 	
-	fmt.Println("DONE")
+	fmt.Fprintf(g_ll, "DONE")
 }
-
-	/*
-	fmt.Printf("masterCtxt: %d\n", masterCtxt)
-	fmt.Println()
-	fmt.Printf("> len(derivedKey): %d\n", len(derivedKey))
-	fmt.Printf("> len(masterCtxt): %d\n", len(masterCtxt))
-	fmt.Printf("> padding: %d\n", padding)
-	fmt.Printf("opdata.header: %s\n", masterOpdata.header)
-	fmt.Printf("opdata.length: %d\n", masterOpdata.length)
-	fmt.Printf("opdata.ivec: %d\n", masterOpdata.ivec)
-	fmt.Printf("opdata.ctxt: %d\n", masterOpdata.ctxt)
-	fmt.Printf("opdata.hmac: %d\n", masterOpdata.hmac)
-	fmt.Println()
-	
-	fmt.Printf("> len(derivedKey): %d\n", len(derivedKey))
-	fmt.Printf("> len(overviewCtxt): %d\n", len(overviewCtxt))
-	fmt.Printf("> padding: %d\n", padding)
-	fmt.Printf("opdata.header: %s\n", overviewOpdata.header)
-	fmt.Printf("opdata.length: %d\n", overviewOpdata.length)
-	fmt.Printf("opdata.ivec: %d\n", overviewOpdata.ivec)
-	fmt.Printf("opdata.ctxt: %d\n", overviewOpdata.ctxt)
-	fmt.Printf("opdata.hmac: %d\n", overviewOpdata.hmac)
-	fmt.Println()
-	*/
-
-	/*
-	band_0DataMap := band_0Data.(map[string]interface{})
-	for k, v := range band_0DataMap {
-		switch itemObj := v.(type) {
-		case interface{}:
-			var item OPWItem
-			for itemKey, itemVal := range itemObj.(map[string]interface{}) {
-				switch itemKey {
-				case "category":
-					switch itemVal := itemVal.(type) {
-					case string:
-						item.Category = itemVal
-					}
-				case "d":
-					switch itemVal := itemVal.(type) {
-					case string:
-						item.D = itemVal
-					}
-				case "hmac":
-					switch itemVal := itemVal.(type) {
-					case string:
-						item.Hmac = itemVal
-					}
-				case "k":
-					switch itemVal := itemVal.(type) {
-					case string:
-						item.K = itemVal
-					}
-				case "o":
-					switch itemVal := itemVal.(type) {
-					case string:
-						item.O = itemVal
-					}
-				case "uuid":
-					switch itemVal := itemVal.(type) {
-					case string:
-						item.Uuid = itemVal
-					}
-				}
-			}
-			fmt.Printf("%s: %+v\n", k, item)
-			fmt.Println()
-		}
-	}*/
-	/*dec := json.NewDecoder(bytes.NewReader(profileE[12:len(profileE)-1]))
-	var p map[string]interface{}
-	for {
-		if err := dec.Decode(&p); err == io.EOF {
-			break
-		} else if err != nil {
-			fmt.Print(err)
-		}
-		fmt.Printf("%+v\n", p)
-	}
-	for k, v := range p {
-		fmt.Printf("key[%s] value[%s]\n", k, v)
-	}
-	
-	band_0Decoder := json.NewDecoder(bytes.NewReader(band_0E))
-	for {
-		if err := band_0Decoder.Decode(&band_0Data); err == io.EOF {
-			break
-		} else if err != nil {
-			fmt.Print(err)
-		}
-		fmt.Printf("%+v\n", band_0Data)
-	}
-	*/
