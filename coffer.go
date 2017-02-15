@@ -38,7 +38,7 @@ type OPWProfile struct {
 }
 
 func parseProfile(path string) OPWProfile {
-	profileRaw, err := ioutil.ReadFile(path + "profile.js")
+	profileRaw, err := ioutil.ReadFile(path + "/default/profile.js")
 	if err != nil {
 		fmt.Print(err)
 	}
@@ -104,7 +104,7 @@ type OPWBand map[string]OPWItem
 
 func parseBand(path string, band int) OPWBand {
 	bandName := "band_" + strconv.Itoa(band)
-	bandRaw, err := ioutil.ReadFile(path + bandName + ".js")
+	bandRaw, err := ioutil.ReadFile(path + "/default/" + bandName + ".js")
 	if err != nil {
 		fmt.Print(err)
 	}
@@ -123,7 +123,7 @@ func decrypt(key []byte, raw []byte, ivec []byte, ctxt []byte, vmac []byte) []by
 	h.Write(raw[:len(raw)-len(vmac)])
 	mac := h.Sum(nil)
 	if !hmac.Equal(mac, vmac) {
-		fmt.Fprintf(g_ll, "bad hmac: %d\n", mac)
+		fmt.Printf("bad hmac: %d\n", mac)
 	}
 	// decrypt
 	ptxt := make([]byte, len(ctxt))
@@ -151,7 +151,7 @@ func main() {
 			g_ll = ioutil.Discard
 	}
 
-	path := "/mnt/c/Users/sean/Dropbox/1Password.opvault/default/"
+	path := "/mnt/c/Users/sean/Documents/1Password/all.opvault"
 
 	// get profile
 	var p OPWProfile = parseProfile(path)
